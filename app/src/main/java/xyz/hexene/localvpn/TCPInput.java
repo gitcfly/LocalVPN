@@ -91,6 +91,7 @@ public class TCPInput implements Runnable {
             referencePacket.updateTCPBuffer(responseBuffer, (byte) Packet.TCPHeader.RST, 0, tcb.myAcknowledgementNum, 0);
             networkToDeviceQueue.offer(responseBuffer);
             TCB.closeTCB(tcb);
+            System.out.println("processConnect异常关闭连接："+tcb.ipAndPort);
         }
     }
 
@@ -108,9 +109,10 @@ public class TCPInput implements Runnable {
                 readBytes = inputChannel.read(receiveBuffer);
             } catch (IOException e) {
                 Log.e(TAG, "Network read error: " + tcb.ipAndPort, e);
-                referencePacket.updateTCPBuffer(receiveBuffer, (byte) Packet.TCPHeader.RST, 0, tcb.myAcknowledgementNum, 0);
+                referencePacket.updateTCPBuffer(receiveBuffer, (byte) (Packet.TCPHeader.RST|Packet.TCPHeader.PSH), 0, tcb.myAcknowledgementNum, 0);
                 networkToDeviceQueue.offer(receiveBuffer);
                 TCB.closeTCB(tcb);
+                System.out.println("processInput 异常关闭连接："+tcb.ipAndPort);
                 return;
             }
             if (readBytes == -1) {

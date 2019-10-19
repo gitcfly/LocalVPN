@@ -250,6 +250,9 @@ public class Packet {
             this.sourceAddress = InetAddress.getByAddress(addressBytes);
             buffer.get(addressBytes, 0, 4);
             this.destinationAddress = InetAddress.getByAddress(addressBytes);
+            if(this.headerLength!=20){
+                System.out.println(this.headerLength);
+            }
             //this.optionsAndPadding = buffer.getInt();
         }
 

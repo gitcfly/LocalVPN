@@ -159,7 +159,8 @@ public class LocalVPNService extends VpnService {
             FileChannel vpnOutput = new FileOutputStream(vpnFileDescriptor).getChannel();
             ByteBuffer bufferToNetwork = null;
             boolean dataSent = true;
-            boolean dataReceived;
+            NetInput netInput=new NetInput(vpnOutput,networkToDeviceQueue);
+            netInput.start();
             while (!Thread.interrupted()) {
                 try {
                     if (dataSent) {
@@ -185,21 +186,10 @@ public class LocalVPNService extends VpnService {
                     } else {
                         dataSent = false;
                     }
-                    ByteBuffer bufferFromNetwork = networkToDeviceQueue.poll();
-                    if (bufferFromNetwork != null) {
-                        bufferFromNetwork.flip();
-                        bufferFromNetwork.position(0);
-                        while (bufferFromNetwork.hasRemaining()){
-                            vpnOutput.write(bufferFromNetwork);
-                        }
-                        dataReceived = true;
-                        ByteBufferPool.release(bufferFromNetwork);
-                    } else {
-                        dataReceived = false;
-                    }
+
                     // TODO: Sleep-looping is not very battery-friendly, consider blocking instead
                     // Confirm if throughput with ConcurrentQueue is really higher compared to BlockingQueue
-                    if (!dataSent && !dataReceived)
+                    if (!dataSent)
                         Thread.sleep(10);
                 } catch (InterruptedException e) {
                     Log.e(TAG, "服務停止");

@@ -78,6 +78,7 @@ public class TCB {
     }
 
     public static void closeTCB(TCB tcb) {
+        tcb.selectionKey.channel();
         tcb.closeChannel();
         synchronized (tcbCache) {
             tcbCache.remove(tcb.ipAndPort);

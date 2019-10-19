@@ -76,9 +76,11 @@ public class TCPOutput implements Runnable {
                 if (tcb == null)
                     initializeConnection(ipAndPort, destinationAddress, destinationPort, currentPacket, tcpHeader, responseBuffer);
                 else if (tcpHeader.isSYN())
-                    processDuplicateSYN(tcb, tcpHeader, responseBuffer);
-                else if (tcpHeader.isRST())
+                    processDuplicateSYN(tcb, tcpHeader, currentPacket,responseBuffer);
+                else if (tcpHeader.isRST()){
                     closeCleanly(tcb, responseBuffer);
+                    System.out.println("closeCleanly----sendRST 关闭连接："+tcb.ipAndPort);
+                }
                 else if (tcpHeader.isFIN())
                     processFIN(tcb, tcpHeader, responseBuffer);
                 else if (tcpHeader.isACK())
@@ -92,9 +94,6 @@ public class TCPOutput implements Runnable {
                 break;
             }catch (Exception e){
                 Log.i(TAG, e.getMessage(),e);
-                if(tcb!=null){
-                    TCB.closeTCB(tcb);
-                }
             }
         }
     }
@@ -117,7 +116,10 @@ public class TCPOutput implements Runnable {
                     // TODO: Set MSS for receiving larger packets from the device
                     currentPacket.updateTCPBuffer(responseBuffer, (byte) (TCPHeader.SYN | TCPHeader.ACK),
                             tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
+                    //这里需要加1吗
                     tcb.mySequenceNum++; // SYN counts as a byte
+//                    selector.wakeup();
+//                    tcb.selectionKey = outputChannel.register(selector, SelectionKey.OP_READ, tcb);
                 } else {
                     tcb.status = TCBStatus.SYN_SENT;
                     selector.wakeup();
@@ -128,6 +130,7 @@ public class TCPOutput implements Runnable {
                 Log.e(TAG, "Connection error: " + ipAndPort, e);
                 currentPacket.updateTCPBuffer(responseBuffer, (byte) TCPHeader.RST, 0, tcb.myAcknowledgementNum, 0);
                 TCB.closeTCB(tcb);
+                System.out.println("initializeConnection 异常关闭连接："+tcb.ipAndPort);
             }
         } else {
             currentPacket.updateTCPBuffer(responseBuffer, (byte) TCPHeader.RST, 0, tcpHeader.sequenceNumber + 1, 0);
@@ -135,14 +138,21 @@ public class TCPOutput implements Runnable {
         networkToDeviceQueue.offer(responseBuffer);
     }
 
-    private void processDuplicateSYN(TCB tcb, TCPHeader tcpHeader, ByteBuffer responseBuffer) {
+    private void processDuplicateSYN(TCB tcb, TCPHeader tcpHeader, Packet currentPacket, ByteBuffer responseBuffer) {
         synchronized (tcb) {
-            if (tcb.status == TCBStatus.SYN_SENT) {
+            if (tcb.status == TCBStatus.SYN_SENT||tcb.status==TCBStatus.SYN_RECEIVED) {
+                tcb.status=TCBStatus.SYN_RECEIVED;
+                tcb.mySequenceNum=random.nextInt(Short.MAX_VALUE + 1);
                 tcb.myAcknowledgementNum = tcpHeader.sequenceNumber + 1;
+                currentPacket.updateTCPBuffer(responseBuffer, (byte) (TCPHeader.SYN | TCPHeader.ACK),
+                        tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
+                networkToDeviceQueue.offer(responseBuffer);
+                tcb.mySequenceNum++;
                 return;
             }
         }
         sendRST(tcb, 1, responseBuffer);
+        System.out.println("processDuplicateSYN----sendRST关闭连接："+tcb.ipAndPort);
     }
 
     private void processFIN(TCB tcb, TCPHeader tcpHeader, ByteBuffer responseBuffer) {
@@ -154,15 +164,17 @@ public class TCPOutput implements Runnable {
             if (tcb.waitingForNetworkData) {
                 tcb.status = TCBStatus.CLOSE_WAIT;
                 referencePacket.updateTCPBuffer(responseBuffer, (byte) TCPHeader.ACK,
-                        tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
-            } else {
+                        0, tcb.myAcknowledgementNum, 0);
+                networkToDeviceQueue.offer(responseBuffer);
+
                 tcb.status = TCBStatus.LAST_ACK;
                 referencePacket.updateTCPBuffer(responseBuffer, (byte) (TCPHeader.FIN | TCPHeader.ACK),
                         tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
                 tcb.mySequenceNum++; // FIN counts as a byte
+                networkToDeviceQueue.offer(responseBuffer);
             }
         }
-        networkToDeviceQueue.offer(responseBuffer);
+//        networkToDeviceQueue.offer(responseBuffer);
     }
 
     private void processACK(TCB tcb, TCPHeader tcpHeader, ByteBuffer payloadBuffer, ByteBuffer responseBuffer) throws IOException {
@@ -177,6 +189,7 @@ public class TCPOutput implements Runnable {
                 tcb.waitingForNetworkData = true;
             } else if (tcb.status == TCBStatus.LAST_ACK) {
                 closeCleanly(tcb, responseBuffer);
+                System.out.println("processACK----closeCleanly 关闭连接："+tcb.ipAndPort);
                 return;
             }
             if (payloadSize == 0)
@@ -193,6 +206,7 @@ public class TCPOutput implements Runnable {
             } catch (IOException e) {
                 Log.e(TAG, "Network write error: " + tcb.ipAndPort, e);
                 sendRST(tcb, payloadSize, responseBuffer);
+                System.out.println("processACK----sendRST 异常关闭连接："+tcb.ipAndPort);
                 return;
             }
             // TODO: We don't expect out-of-order packets, but verify
