@@ -21,10 +21,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.VpnService;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
-
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -91,7 +89,7 @@ public class LocalVPN extends AppCompatActivity {
             vpnButton.setEnabled(true);
             vpnButton.setText(R.string.start_vpn);
         } else {
-            vpnButton.setEnabled(true);
+            vpnButton.setEnabled(false);
             vpnButton.setText(R.string.stop_vpn);
         }
     }
