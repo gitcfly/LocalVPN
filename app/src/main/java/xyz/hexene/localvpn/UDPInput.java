@@ -41,18 +41,18 @@ public class UDPInput implements Runnable {
 
     @Override
     public void run() {
-        try {
-            Log.i(TAG, "Started");
-            while (!Thread.interrupted()) {
+        Log.i(TAG, "Started");
+        Thread currentThread = Thread.currentThread();
+        while (!currentThread.isInterrupted()) {
+            try {
                 int readyChannels = selector.select();
-
                 if (readyChannels == 0) {
                     Thread.sleep(10);
                     continue;
                 }
                 Set<SelectionKey> keys = selector.selectedKeys();
                 Iterator<SelectionKey> keyIterator = keys.iterator();
-                while (keyIterator.hasNext() && !Thread.interrupted()) {
+                while (keyIterator.hasNext() && !currentThread.isInterrupted()) {
                     SelectionKey key = keyIterator.next();
                     if (key.isValid() && key.isReadable()) {
                         keyIterator.remove();
@@ -69,11 +69,11 @@ public class UDPInput implements Runnable {
                         networkToDeviceQueue.offer(receiveBuffer);
                     }
                 }
+            }catch (InterruptedException e){
+                Log.e(TAG, "服務停止",e);
+            } catch(Exception e) {
+                Log.i(TAG, e.getMessage(),e);
             }
-        } catch (InterruptedException e) {
-            Log.i(TAG, "Stopping");
-        } catch (IOException e) {
-            Log.w(TAG, e.toString(), e);
         }
     }
 }

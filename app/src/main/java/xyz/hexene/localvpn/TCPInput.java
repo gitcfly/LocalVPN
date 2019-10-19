@@ -43,9 +43,10 @@ public class TCPInput implements Runnable {
 
     @Override
     public void run() {
-        try {
-            Log.d(TAG, "Started");
-            while (!Thread.interrupted()) {
+        Log.d(TAG, "Started");
+        Thread currentThread = Thread.currentThread();
+        while (!currentThread.isInterrupted()) {
+            try{
                 int readyChannels = selector.select();
                 if (readyChannels == 0) {
                     Thread.sleep(10);
@@ -62,11 +63,11 @@ public class TCPInput implements Runnable {
                             processInput(key, keyIterator);
                     }
                 }
+            }catch (InterruptedException e){
+                Log.e(TAG, "服務停止", e);
+            } catch(Exception e){
+                Log.w(TAG, e.toString(), e);
             }
-        } catch (InterruptedException e) {
-            Log.i(TAG, "Stopping");
-        } catch (IOException e) {
-            Log.w(TAG, e.toString(), e);
         }
     }
 
@@ -112,7 +113,6 @@ public class TCPInput implements Runnable {
                 TCB.closeTCB(tcb);
                 return;
             }
-
             if (readBytes == -1) {
                 // End of stream, stop waiting until we push more data
                 key.interestOps(0);

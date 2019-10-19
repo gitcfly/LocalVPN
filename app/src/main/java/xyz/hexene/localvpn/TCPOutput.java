@@ -21,6 +21,7 @@ import android.util.Log;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -51,9 +52,10 @@ public class TCPOutput implements Runnable {
     @Override
     public void run() {
         Log.i(TAG, "Started");
-        try {
-            Thread currentThread = Thread.currentThread();
-            while (true) {
+        Thread currentThread = Thread.currentThread();
+        while (!currentThread.isInterrupted()) {
+            TCB tcb=null;
+            try {
                 Packet currentPacket;
                 // TODO: Block when not connected
                 do {
@@ -62,10 +64,6 @@ public class TCPOutput implements Runnable {
                         break;
                     Thread.sleep(10);
                 } while (!currentThread.isInterrupted());
-
-                if (currentThread.isInterrupted())
-                    break;
-
                 ByteBuffer payloadBuffer = currentPacket.backingBuffer;
                 currentPacket.backingBuffer = null;
                 ByteBuffer responseBuffer = ByteBufferPool.acquire();
@@ -74,7 +72,7 @@ public class TCPOutput implements Runnable {
                 int destinationPort = tcpHeader.destinationPort;
                 int sourcePort = tcpHeader.sourcePort;
                 String ipAndPort = destinationAddress.getHostAddress() + ":" + destinationPort + ":" + sourcePort;
-                TCB tcb = TCB.getTCB(ipAndPort);
+                tcb = TCB.getTCB(ipAndPort);
                 if (tcb == null)
                     initializeConnection(ipAndPort, destinationAddress, destinationPort, currentPacket, tcpHeader, responseBuffer);
                 else if (tcpHeader.isSYN())
@@ -85,18 +83,19 @@ public class TCPOutput implements Runnable {
                     processFIN(tcb, tcpHeader, responseBuffer);
                 else if (tcpHeader.isACK())
                     processACK(tcb, tcpHeader, payloadBuffer, responseBuffer);
-
                 // XXX: cleanup later
                 if (responseBuffer.position() == 0)
                     ByteBufferPool.release(responseBuffer);
                 ByteBufferPool.release(payloadBuffer);
+            } catch (InterruptedException e) {
+                Log.e(TAG, "服務停止",e);
+                break;
+            }catch (Exception e){
+                Log.i(TAG, e.getMessage(),e);
+                if(tcb!=null){
+                    TCB.closeTCB(tcb);
+                }
             }
-        } catch (InterruptedException e) {
-            Log.i(TAG, "Stopping");
-        } catch (IOException e) {
-            Log.e(TAG, e.toString(), e);
-        } finally {
-            TCB.closeAll();
         }
     }
 

@@ -54,9 +54,9 @@ public class UDPOutput implements Runnable {
     @Override
     public void run() {
         Log.i(TAG, "Started");
-        try {
-            Thread currentThread = Thread.currentThread();
-            while (true) {
+        Thread currentThread = Thread.currentThread();
+        while (!currentThread.isInterrupted()) {
+            try {
                 Packet currentPacket;
                 // TODO: Block when not connected
                 do {
@@ -65,8 +65,6 @@ public class UDPOutput implements Runnable {
                         break;
                     Thread.sleep(10);
                 } while (!currentThread.isInterrupted());
-                if (currentThread.isInterrupted())
-                    break;
                 InetAddress destinationAddress = currentPacket.ip4Header.destinationAddress;
                 int destinationPort = currentPacket.udpHeader.destinationPort;
                 int sourcePort = currentPacket.udpHeader.sourcePort;
@@ -74,6 +72,7 @@ public class UDPOutput implements Runnable {
                 DatagramChannel outputChannel = channelCache.get(ipAndPort);
                 if (outputChannel == null) {
                     outputChannel = DatagramChannel.open();
+                    outputChannel.configureBlocking(false);
                     vpnService.protect(outputChannel.socket());
                     try {
                         outputChannel.connect(new InetSocketAddress(destinationAddress, destinationPort));
@@ -83,7 +82,6 @@ public class UDPOutput implements Runnable {
                         ByteBufferPool.release(currentPacket.backingBuffer);
                         continue;
                     }
-                    outputChannel.configureBlocking(false);
                     currentPacket.swapSourceAndDestination();
                     selector.wakeup();
                     outputChannel.register(selector, SelectionKey.OP_READ, currentPacket);
@@ -99,14 +97,13 @@ public class UDPOutput implements Runnable {
                     closeChannel(outputChannel);
                 }
                 ByteBufferPool.release(currentPacket.backingBuffer);
+            } catch (InterruptedException e) {
+                Log.e(TAG, "服務停止",e);
+            } catch (Exception e) {
+                Log.i(TAG, e.toString(), e);
             }
-        } catch (InterruptedException e) {
-            Log.i(TAG, "Stopping");
-        } catch (IOException e) {
-            Log.i(TAG, e.toString(), e);
-        } finally {
-            closeAll();
         }
+        closeAll();
     }
 
     private void closeAll() {

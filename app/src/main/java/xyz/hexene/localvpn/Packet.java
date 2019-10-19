@@ -189,6 +189,25 @@ public class Packet {
         public InetAddress destinationAddress;
         public int optionsAndPadding;
 
+        @Override
+        public String toString() {
+            return "IP4Header{" +
+                    "version=" + version +
+                    ", IHL=" + IHL +
+                    ", headerLength=" + headerLength +
+                    ", typeOfService=" + typeOfService +
+                    ", totalLength=" + totalLength +
+                    ", identificationAndFlagsAndFragmentOffset=" + identificationAndFlagsAndFragmentOffset +
+                    ", TTL=" + TTL +
+                    ", protocolNum=" + protocolNum +
+                    ", protocol=" + protocol +
+                    ", headerChecksum=" + headerChecksum +
+                    ", sourceAddress=" + sourceAddress +
+                    ", destinationAddress=" + destinationAddress +
+                    ", optionsAndPadding=" + optionsAndPadding +
+                    '}';
+        }
+
         private enum TransportProtocol {
             TCP(6),
             UDP(17),
@@ -246,22 +265,6 @@ public class Packet {
             buffer.put(this.destinationAddress.getAddress());
         }
 
-        @Override
-        public String toString() {
-            final StringBuilder sb = new StringBuilder("IP4Header{");
-            sb.append("version=").append(version);
-            sb.append(", IHL=").append(IHL);
-            sb.append(", typeOfService=").append(typeOfService);
-            sb.append(", totalLength=").append(totalLength);
-            sb.append(", identificationAndFlagsAndFragmentOffset=").append(identificationAndFlagsAndFragmentOffset);
-            sb.append(", TTL=").append(TTL);
-            sb.append(", protocol=").append(protocolNum).append(":").append(protocol);
-            sb.append(", headerChecksum=").append(headerChecksum);
-            sb.append(", sourceAddress=").append(sourceAddress.getHostAddress());
-            sb.append(", destinationAddress=").append(destinationAddress.getHostAddress());
-            sb.append('}');
-            return sb.toString();
-        }
     }
 
     public static class TCPHeader {

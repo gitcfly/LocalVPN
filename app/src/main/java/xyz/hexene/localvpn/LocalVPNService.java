@@ -30,6 +30,7 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.Selector;
@@ -156,11 +157,11 @@ public class LocalVPNService extends VpnService {
             Log.i(TAG, "Started");
             FileChannel vpnInput = new FileInputStream(vpnFileDescriptor).getChannel();
             FileChannel vpnOutput = new FileOutputStream(vpnFileDescriptor).getChannel();
-            try {
-                ByteBuffer bufferToNetwork = null;
-                boolean dataSent = true;
-                boolean dataReceived;
-                while (!Thread.interrupted()) {
+            ByteBuffer bufferToNetwork = null;
+            boolean dataSent = true;
+            boolean dataReceived;
+            while (!Thread.interrupted()) {
+                try {
                     if (dataSent) {
                         bufferToNetwork = ByteBufferPool.acquire();
                     } else {
@@ -187,6 +188,7 @@ public class LocalVPNService extends VpnService {
                     ByteBuffer bufferFromNetwork = networkToDeviceQueue.poll();
                     if (bufferFromNetwork != null) {
                         bufferFromNetwork.flip();
+                        bufferFromNetwork.position(0);
                         while (bufferFromNetwork.hasRemaining()){
                             vpnOutput.write(bufferFromNetwork);
                         }
@@ -199,14 +201,13 @@ public class LocalVPNService extends VpnService {
                     // Confirm if throughput with ConcurrentQueue is really higher compared to BlockingQueue
                     if (!dataSent && !dataReceived)
                         Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    Log.e(TAG, "服務停止");
+                } catch (Exception e) {
+                    Log.w(TAG, e.toString(), e);
                 }
-            } catch (InterruptedException e) {
-                Log.i(TAG, "Stopping");
-            } catch (IOException e) {
-                Log.w(TAG, e.toString(), e);
-            } finally {
-                closeResources(vpnInput, vpnOutput);
             }
+            closeResources(vpnInput, vpnOutput);
         }
     }
 }
