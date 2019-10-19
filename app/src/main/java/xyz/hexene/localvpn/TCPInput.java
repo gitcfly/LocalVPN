@@ -33,11 +33,11 @@ public class TCPInput implements Runnable {
     private static final String TAG = TCPInput.class.getSimpleName();
     private static final int HEADER_SIZE = Packet.IP4_HEADER_SIZE + Packet.TCP_HEADER_SIZE;
 
-    private ConcurrentLinkedQueue<ByteBuffer> outputQueue;
+    private ConcurrentLinkedQueue<ByteBuffer> networkToDeviceQueue;
     private Selector selector;
 
     public TCPInput(ConcurrentLinkedQueue<ByteBuffer> outputQueue, Selector selector) {
-        this.outputQueue = outputQueue;
+        this.networkToDeviceQueue = outputQueue;
         this.selector = selector;
     }
 
@@ -80,7 +80,7 @@ public class TCPInput implements Runnable {
                 // TODO: Set MSS for receiving larger packets from the device
                 ByteBuffer responseBuffer = ByteBufferPool.acquire();
                 referencePacket.updateTCPBuffer(responseBuffer, (byte) (Packet.TCPHeader.SYN | Packet.TCPHeader.ACK), tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
-                outputQueue.offer(responseBuffer);
+                networkToDeviceQueue.offer(responseBuffer);
                 tcb.mySequenceNum++; // SYN counts as a byte
                 key.interestOps(SelectionKey.OP_READ);
             }
@@ -88,7 +88,7 @@ public class TCPInput implements Runnable {
             Log.e(TAG, "Connection error: " + tcb.ipAndPort, e);
             ByteBuffer responseBuffer = ByteBufferPool.acquire();
             referencePacket.updateTCPBuffer(responseBuffer, (byte) Packet.TCPHeader.RST, 0, tcb.myAcknowledgementNum, 0);
-            outputQueue.offer(responseBuffer);
+            networkToDeviceQueue.offer(responseBuffer);
             TCB.closeTCB(tcb);
         }
     }
@@ -98,7 +98,6 @@ public class TCPInput implements Runnable {
         ByteBuffer receiveBuffer = ByteBufferPool.acquire();
         // Leave space for the header
         receiveBuffer.position(HEADER_SIZE);
-
         TCB tcb = (TCB) key.attachment();
         synchronized (tcb) {
             Packet referencePacket = tcb.referencePacket;
@@ -109,7 +108,7 @@ public class TCPInput implements Runnable {
             } catch (IOException e) {
                 Log.e(TAG, "Network read error: " + tcb.ipAndPort, e);
                 referencePacket.updateTCPBuffer(receiveBuffer, (byte) Packet.TCPHeader.RST, 0, tcb.myAcknowledgementNum, 0);
-                outputQueue.offer(receiveBuffer);
+                networkToDeviceQueue.offer(receiveBuffer);
                 TCB.closeTCB(tcb);
                 return;
             }
@@ -118,12 +117,10 @@ public class TCPInput implements Runnable {
                 // End of stream, stop waiting until we push more data
                 key.interestOps(0);
                 tcb.waitingForNetworkData = false;
-
                 if (tcb.status != TCBStatus.CLOSE_WAIT) {
                     ByteBufferPool.release(receiveBuffer);
                     return;
                 }
-
                 tcb.status = TCBStatus.LAST_ACK;
                 referencePacket.updateTCPBuffer(receiveBuffer, (byte) Packet.TCPHeader.FIN, tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
                 tcb.mySequenceNum++; // FIN counts as a byte
@@ -135,6 +132,6 @@ public class TCPInput implements Runnable {
                 receiveBuffer.position(HEADER_SIZE + readBytes);
             }
         }
-        outputQueue.offer(receiveBuffer);
+        networkToDeviceQueue.offer(receiveBuffer);
     }
 }

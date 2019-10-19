@@ -34,7 +34,7 @@ public class UDPOutput implements Runnable {
     private static final int MAX_CACHE_SIZE = 50;
 
     private LocalVPNService vpnService;
-    private ConcurrentLinkedQueue<Packet> inputQueue;
+    private ConcurrentLinkedQueue<Packet> deviceToNetworkUDPQueue;
     private Selector selector;
 
     private LRUCache<String, DatagramChannel> channelCache =
@@ -46,7 +46,7 @@ public class UDPOutput implements Runnable {
             });
 
     public UDPOutput(ConcurrentLinkedQueue<Packet> inputQueue, Selector selector, LocalVPNService vpnService) {
-        this.inputQueue = inputQueue;
+        this.deviceToNetworkUDPQueue = inputQueue;
         this.selector = selector;
         this.vpnService = vpnService;
     }
@@ -60,7 +60,7 @@ public class UDPOutput implements Runnable {
                 Packet currentPacket;
                 // TODO: Block when not connected
                 do {
-                    currentPacket = inputQueue.poll();
+                    currentPacket = deviceToNetworkUDPQueue.poll();
                     if (currentPacket != null)
                         break;
                     Thread.sleep(10);

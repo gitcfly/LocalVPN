@@ -39,7 +39,7 @@ import java.util.concurrent.Executors;
 
 public class LocalVPNService extends VpnService {
     private static final String TAG = LocalVPNService.class.getSimpleName();
-    private static final String VPN_ADDRESS = "10.0.0.2"; // Only IPv4 support for now
+    private static final String VPN_ADDRESS = "192.168.0.1"; // Only IPv4 support for now
     private static final String VPN_ROUTE = "0.0.0.0"; // Intercept everything
 
     public static final String BROADCAST_VPN_STATE = "xyz.hexene.localvpn.VPN_STATE";
@@ -75,8 +75,7 @@ public class LocalVPNService extends VpnService {
             executorService.submit(new UDPOutput(deviceToNetworkUDPQueue, udpSelector, this));
             executorService.submit(new TCPInput(networkToDeviceQueue, tcpSelector));
             executorService.submit(new TCPOutput(deviceToNetworkTCPQueue, networkToDeviceQueue, tcpSelector, this));
-            executorService.submit(new VPNRunnable(vpnInterface.getFileDescriptor(),
-                    deviceToNetworkUDPQueue, deviceToNetworkTCPQueue, networkToDeviceQueue));
+            executorService.submit(new VPNRunnable(vpnInterface.getFileDescriptor(), deviceToNetworkUDPQueue, deviceToNetworkTCPQueue, networkToDeviceQueue));
             LocalBroadcastManager.getInstance(this).sendBroadcast(new Intent(BROADCAST_VPN_STATE).putExtra("running", true));
             Log.i(TAG, "Started");
         } catch (IOException e) {
@@ -90,7 +89,7 @@ public class LocalVPNService extends VpnService {
     private void setupVPN() {
         if (vpnInterface == null) {
             Builder builder = new Builder();
-            builder.addAddress(VPN_ADDRESS, 32);
+            builder.addAddress(VPN_ADDRESS, 24);
             builder.addRoute(VPN_ROUTE, 0);
             vpnInterface = builder.setSession(getString(R.string.app_name)).setConfigureIntent(pendingIntent).establish();
         }
@@ -155,20 +154,18 @@ public class LocalVPNService extends VpnService {
         @Override
         public void run() {
             Log.i(TAG, "Started");
-
             FileChannel vpnInput = new FileInputStream(vpnFileDescriptor).getChannel();
             FileChannel vpnOutput = new FileOutputStream(vpnFileDescriptor).getChannel();
-
             try {
                 ByteBuffer bufferToNetwork = null;
                 boolean dataSent = true;
                 boolean dataReceived;
                 while (!Thread.interrupted()) {
-                    if (dataSent)
+                    if (dataSent) {
                         bufferToNetwork = ByteBufferPool.acquire();
-                    else
+                    } else {
                         bufferToNetwork.clear();
-
+                    }
                     // TODO: Block when not connected
                     int readBytes = vpnInput.read(bufferToNetwork);
                     if (readBytes > 0) {
@@ -187,19 +184,17 @@ public class LocalVPNService extends VpnService {
                     } else {
                         dataSent = false;
                     }
-
                     ByteBuffer bufferFromNetwork = networkToDeviceQueue.poll();
                     if (bufferFromNetwork != null) {
                         bufferFromNetwork.flip();
-                        while (bufferFromNetwork.hasRemaining())
+                        while (bufferFromNetwork.hasRemaining()){
                             vpnOutput.write(bufferFromNetwork);
+                        }
                         dataReceived = true;
-
                         ByteBufferPool.release(bufferFromNetwork);
                     } else {
                         dataReceived = false;
                     }
-
                     // TODO: Sleep-looping is not very battery-friendly, consider blocking instead
                     // Confirm if throughput with ConcurrentQueue is really higher compared to BlockingQueue
                     if (!dataSent && !dataReceived)

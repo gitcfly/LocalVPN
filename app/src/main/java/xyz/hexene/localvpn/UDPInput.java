@@ -32,10 +32,10 @@ public class UDPInput implements Runnable {
     private static final int HEADER_SIZE = Packet.IP4_HEADER_SIZE + Packet.UDP_HEADER_SIZE;
 
     private Selector selector;
-    private ConcurrentLinkedQueue<ByteBuffer> outputQueue;
+    private ConcurrentLinkedQueue<ByteBuffer> networkToDeviceQueue;
 
     public UDPInput(ConcurrentLinkedQueue<ByteBuffer> outputQueue, Selector selector) {
-        this.outputQueue = outputQueue;
+        this.networkToDeviceQueue = outputQueue;
         this.selector = selector;
     }
 
@@ -66,7 +66,7 @@ public class UDPInput implements Runnable {
                         Packet referencePacket = (Packet) key.attachment();
                         referencePacket.updateUDPBuffer(receiveBuffer, readBytes);
                         receiveBuffer.position(HEADER_SIZE + readBytes);
-                        outputQueue.offer(receiveBuffer);
+                        networkToDeviceQueue.offer(receiveBuffer);
                     }
                 }
             }

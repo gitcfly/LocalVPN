@@ -57,8 +57,7 @@ public class LocalVPN extends AppCompatActivity {
             }
         });
         waitingForVPNStart = false;
-        LocalBroadcastManager.getInstance(this).registerReceiver(vpnStateReceiver,
-                new IntentFilter(LocalVPNService.BROADCAST_VPN_STATE));
+        LocalBroadcastManager.getInstance(this).registerReceiver(vpnStateReceiver, new IntentFilter(LocalVPNService.BROADCAST_VPN_STATE));
     }
 
     private void startVPN() {
@@ -74,7 +73,8 @@ public class LocalVPN extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == VPN_REQUEST_CODE && resultCode == RESULT_OK) {
             waitingForVPNStart = true;
-            startService(new Intent(this, LocalVPNService.class));
+            Intent intent=new Intent(this, LocalVPNService.class);
+            startService(intent);
             enableButton(false);
         }
     }
@@ -82,7 +82,6 @@ public class LocalVPN extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-
         enableButton(!waitingForVPNStart && !LocalVPNService.isRunning());
     }
 
@@ -92,7 +91,7 @@ public class LocalVPN extends AppCompatActivity {
             vpnButton.setEnabled(true);
             vpnButton.setText(R.string.start_vpn);
         } else {
-            vpnButton.setEnabled(false);
+            vpnButton.setEnabled(true);
             vpnButton.setText(R.string.stop_vpn);
         }
     }

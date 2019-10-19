@@ -35,16 +35,15 @@ public class TCPOutput implements Runnable {
     private static final String TAG = TCPOutput.class.getSimpleName();
 
     private LocalVPNService vpnService;
-    private ConcurrentLinkedQueue<Packet> inputQueue;
-    private ConcurrentLinkedQueue<ByteBuffer> outputQueue;
+    private ConcurrentLinkedQueue<Packet> deviceToNetworkTCPQueue;
+    private ConcurrentLinkedQueue<ByteBuffer> networkToDeviceQueue;
     private Selector selector;
-
     private Random random = new Random();
 
     public TCPOutput(ConcurrentLinkedQueue<Packet> inputQueue, ConcurrentLinkedQueue<ByteBuffer> outputQueue,
                      Selector selector, LocalVPNService vpnService) {
-        this.inputQueue = inputQueue;
-        this.outputQueue = outputQueue;
+        this.deviceToNetworkTCPQueue = inputQueue;
+        this.networkToDeviceQueue = outputQueue;
         this.selector = selector;
         this.vpnService = vpnService;
     }
@@ -53,13 +52,12 @@ public class TCPOutput implements Runnable {
     public void run() {
         Log.i(TAG, "Started");
         try {
-
             Thread currentThread = Thread.currentThread();
             while (true) {
                 Packet currentPacket;
                 // TODO: Block when not connected
                 do {
-                    currentPacket = inputQueue.poll();
+                    currentPacket = deviceToNetworkTCPQueue.poll();
                     if (currentPacket != null)
                         break;
                     Thread.sleep(10);
@@ -71,15 +69,11 @@ public class TCPOutput implements Runnable {
                 ByteBuffer payloadBuffer = currentPacket.backingBuffer;
                 currentPacket.backingBuffer = null;
                 ByteBuffer responseBuffer = ByteBufferPool.acquire();
-
                 InetAddress destinationAddress = currentPacket.ip4Header.destinationAddress;
-
                 TCPHeader tcpHeader = currentPacket.tcpHeader;
                 int destinationPort = tcpHeader.destinationPort;
                 int sourcePort = tcpHeader.sourcePort;
-
-                String ipAndPort = destinationAddress.getHostAddress() + ":" +
-                        destinationPort + ":" + sourcePort;
+                String ipAndPort = destinationAddress.getHostAddress() + ":" + destinationPort + ":" + sourcePort;
                 TCB tcb = TCB.getTCB(ipAndPort);
                 if (tcb == null)
                     initializeConnection(ipAndPort, destinationAddress, destinationPort, currentPacket, tcpHeader, responseBuffer);
@@ -114,11 +108,9 @@ public class TCPOutput implements Runnable {
             SocketChannel outputChannel = SocketChannel.open();
             outputChannel.configureBlocking(false);
             vpnService.protect(outputChannel.socket());
-
             TCB tcb = new TCB(ipAndPort, random.nextInt(Short.MAX_VALUE + 1), tcpHeader.sequenceNumber, tcpHeader.sequenceNumber + 1,
                     tcpHeader.acknowledgementNumber, outputChannel, currentPacket);
             TCB.putTCB(ipAndPort, tcb);
-
             try {
                 outputChannel.connect(new InetSocketAddress(destinationAddress, destinationPort));
                 if (outputChannel.finishConnect()) {
@@ -139,10 +131,9 @@ public class TCPOutput implements Runnable {
                 TCB.closeTCB(tcb);
             }
         } else {
-            currentPacket.updateTCPBuffer(responseBuffer, (byte) TCPHeader.RST,
-                    0, tcpHeader.sequenceNumber + 1, 0);
+            currentPacket.updateTCPBuffer(responseBuffer, (byte) TCPHeader.RST, 0, tcpHeader.sequenceNumber + 1, 0);
         }
-        outputQueue.offer(responseBuffer);
+        networkToDeviceQueue.offer(responseBuffer);
     }
 
     private void processDuplicateSYN(TCB tcb, TCPHeader tcpHeader, ByteBuffer responseBuffer) {
@@ -172,7 +163,7 @@ public class TCPOutput implements Runnable {
                 tcb.mySequenceNum++; // FIN counts as a byte
             }
         }
-        outputQueue.offer(responseBuffer);
+        networkToDeviceQueue.offer(responseBuffer);
     }
 
     private void processACK(TCB tcb, TCPHeader tcpHeader, ByteBuffer payloadBuffer, ByteBuffer responseBuffer) throws IOException {
@@ -182,7 +173,6 @@ public class TCPOutput implements Runnable {
             SocketChannel outputChannel = tcb.channel;
             if (tcb.status == TCBStatus.SYN_RECEIVED) {
                 tcb.status = TCBStatus.ESTABLISHED;
-
                 selector.wakeup();
                 tcb.selectionKey = outputChannel.register(selector, SelectionKey.OP_READ, tcb);
                 tcb.waitingForNetworkData = true;
@@ -190,15 +180,13 @@ public class TCPOutput implements Runnable {
                 closeCleanly(tcb, responseBuffer);
                 return;
             }
-
-            if (payloadSize == 0) return; // Empty ACK, ignore
-
+            if (payloadSize == 0)
+                return; // Empty ACK, ignore
             if (!tcb.waitingForNetworkData) {
                 selector.wakeup();
                 tcb.selectionKey.interestOps(SelectionKey.OP_READ);
                 tcb.waitingForNetworkData = true;
             }
-
             // Forward to remote server
             try {
                 while (payloadBuffer.hasRemaining())
@@ -208,19 +196,18 @@ public class TCPOutput implements Runnable {
                 sendRST(tcb, payloadSize, responseBuffer);
                 return;
             }
-
             // TODO: We don't expect out-of-order packets, but verify
             tcb.myAcknowledgementNum = tcpHeader.sequenceNumber + payloadSize;
             tcb.theirAcknowledgementNum = tcpHeader.acknowledgementNumber;
             Packet referencePacket = tcb.referencePacket;
             referencePacket.updateTCPBuffer(responseBuffer, (byte) TCPHeader.ACK, tcb.mySequenceNum, tcb.myAcknowledgementNum, 0);
         }
-        outputQueue.offer(responseBuffer);
+        networkToDeviceQueue.offer(responseBuffer);
     }
 
     private void sendRST(TCB tcb, int prevPayloadSize, ByteBuffer buffer) {
         tcb.referencePacket.updateTCPBuffer(buffer, (byte) TCPHeader.RST, 0, tcb.myAcknowledgementNum + prevPayloadSize, 0);
-        outputQueue.offer(buffer);
+        networkToDeviceQueue.offer(buffer);
         TCB.closeTCB(tcb);
     }
 
