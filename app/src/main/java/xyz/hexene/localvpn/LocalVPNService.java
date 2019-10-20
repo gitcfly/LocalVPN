@@ -42,20 +42,12 @@ public class LocalVPNService extends VpnService {
     private static final String TAG = LocalVPNService.class.getSimpleName();
     private static final String VPN_ADDRESS = "192.168.0.1"; // Only IPv4 support for now
     private static final String VPN_ROUTE = "0.0.0.0"; // Intercept everything
-
     public static final String BROADCAST_VPN_STATE = "xyz.hexene.localvpn.VPN_STATE";
 
     private static boolean isRunning = false;
-
     private ParcelFileDescriptor vpnInterface = null;
-
     private PendingIntent pendingIntent;
-
-    private ConcurrentLinkedQueue<Packet> deviceToNetworkUDPQueue;
-    private ConcurrentLinkedQueue<Packet> deviceToNetworkTCPQueue;
-    private ConcurrentLinkedQueue<ByteBuffer> networkToDeviceQueue;
-    private ExecutorService executorService;
-
+    public static ExecutorService executorService;
     private Selector udpSelector;
     private Selector tcpSelector;
 
@@ -67,16 +59,8 @@ public class LocalVPNService extends VpnService {
         try {
             udpSelector = Selector.open();
             tcpSelector = Selector.open();
-            deviceToNetworkUDPQueue = new ConcurrentLinkedQueue<>();
-            deviceToNetworkTCPQueue = new ConcurrentLinkedQueue<>();
-            networkToDeviceQueue = new ConcurrentLinkedQueue<>();
-
             executorService = Executors.newFixedThreadPool(5);
-            executorService.submit(new UDPInput(networkToDeviceQueue, udpSelector));
-            executorService.submit(new UDPOutput(deviceToNetworkUDPQueue, udpSelector, this));
-            executorService.submit(new TCPInput(networkToDeviceQueue, tcpSelector));
-            executorService.submit(new TCPOutput(deviceToNetworkTCPQueue, networkToDeviceQueue, tcpSelector, this));
-            executorService.submit(new VPNRunnable(vpnInterface.getFileDescriptor(), deviceToNetworkUDPQueue, deviceToNetworkTCPQueue, networkToDeviceQueue));
+            executorService.submit(new VPNRunnable(vpnInterface.getFileDescriptor()));
             LocalBroadcastManager.getInstance(this).sendBroadcast(new Intent(BROADCAST_VPN_STATE).putExtra("running", true));
             Log.i(TAG, "Started");
         } catch (IOException e) {
@@ -115,9 +99,6 @@ public class LocalVPNService extends VpnService {
     }
 
     private void cleanup() {
-        deviceToNetworkTCPQueue = null;
-        deviceToNetworkUDPQueue = null;
-        networkToDeviceQueue = null;
         ByteBufferPool.clear();
         closeResources(udpSelector, tcpSelector, vpnInterface);
     }
@@ -128,7 +109,7 @@ public class LocalVPNService extends VpnService {
             try {
                 resource.close();
             } catch (IOException e) {
-                // Ignore
+                Log.e(TAG,e.getMessage(),e);
             }
         }
     }
@@ -142,14 +123,8 @@ public class LocalVPNService extends VpnService {
         private ConcurrentLinkedQueue<Packet> deviceToNetworkTCPQueue;
         private ConcurrentLinkedQueue<ByteBuffer> networkToDeviceQueue;
 
-        public VPNRunnable(FileDescriptor vpnFileDescriptor,
-                           ConcurrentLinkedQueue<Packet> deviceToNetworkUDPQueue,
-                           ConcurrentLinkedQueue<Packet> deviceToNetworkTCPQueue,
-                           ConcurrentLinkedQueue<ByteBuffer> networkToDeviceQueue) {
+        public VPNRunnable(FileDescriptor vpnFileDescriptor) {
             this.vpnFileDescriptor = vpnFileDescriptor;
-            this.deviceToNetworkUDPQueue = deviceToNetworkUDPQueue;
-            this.deviceToNetworkTCPQueue = deviceToNetworkTCPQueue;
-            this.networkToDeviceQueue = networkToDeviceQueue;
         }
 
         @Override
@@ -157,40 +132,18 @@ public class LocalVPNService extends VpnService {
             Log.i(TAG, "Started");
             FileChannel vpnInput = new FileInputStream(vpnFileDescriptor).getChannel();
             FileChannel vpnOutput = new FileOutputStream(vpnFileDescriptor).getChannel();
-            ByteBuffer bufferToNetwork = null;
-            boolean dataSent = true;
             NetInput netInput=new NetInput(vpnOutput,networkToDeviceQueue);
-            netInput.start();
+            executorService.submit(netInput);
             while (!Thread.interrupted()) {
                 try {
-                    if (dataSent) {
-                        bufferToNetwork = ByteBufferPool.acquire();
-                    } else {
-                        bufferToNetwork.clear();
-                    }
-                    // TODO: Block when not connected
-                    int readBytes = vpnInput.read(bufferToNetwork);
+                    ByteBuffer deviceToProxyServer = ByteBufferPool.acquire();
+                    int readBytes = vpnInput.read(deviceToProxyServer);
                     if (readBytes > 0) {
-                        dataSent = true;
-                        bufferToNetwork.flip();
-                        Packet packet = new Packet(bufferToNetwork);
-                        if (packet.isUDP()) {
-                            deviceToNetworkUDPQueue.offer(packet);
-                        } else if (packet.isTCP()) {
-                            deviceToNetworkTCPQueue.offer(packet);
-                        } else {
-                            Log.w(TAG, "Unknown packet type");
-                            Log.w(TAG, packet.ip4Header.toString());
-                            dataSent = false;
-                        }
+                        NetTool.deviceToProxyServer(deviceToProxyServer);
                     } else {
-                        dataSent = false;
+                        deviceToProxyServer.clear();
                     }
-
-                    // TODO: Sleep-looping is not very battery-friendly, consider blocking instead
-                    // Confirm if throughput with ConcurrentQueue is really higher compared to BlockingQueue
-                    if (!dataSent)
-                        Thread.sleep(10);
+                    Thread.sleep(5);
                 } catch (InterruptedException e) {
                     Log.e(TAG, "服務停止");
                 } catch (Exception e) {

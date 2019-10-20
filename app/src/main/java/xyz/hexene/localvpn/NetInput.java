@@ -6,7 +6,7 @@ import java.nio.channels.FileChannel;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-public class NetInput extends Thread {
+public class NetInput implements Runnable {
 
     private FileChannel vpnOutput;
     private Queue<ByteBuffer> networkToDeviceQueue;
