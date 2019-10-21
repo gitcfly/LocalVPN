@@ -34,6 +34,7 @@ public class TCB {
 
     // TCP has more states, but we need only these
     public enum TCBStatus {
+        LISTEN,
         SYN_SENT,
         SYN_RECEIVED,
         ESTABLISHED,
